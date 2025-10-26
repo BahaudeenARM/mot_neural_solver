@@ -1,6 +1,8 @@
 import os
 import os.path as osp
 
+import dataclasses
+
 import pandas as pd
 
 from torch_geometric.data import DataLoader
@@ -30,7 +32,16 @@ class MOTNeuralSolver(pl.LightningModule):
     def __init__(self, hparams):
         super().__init__()
 
-        self.hparams = hparams
+        self._val_step_outputs = []
+        if isinstance(hparams, dict):
+          hparams = hparams
+        elif dataclasses.is_dataclass(hparams):
+            hparams = dataclasses.asdict(hparams) 
+        elif hasattr(hparams, "__dict__"):
+            hparams = vars(hparams)
+        else: 
+            hparams = {"hparams": hparams}
+        self.save_hyperparameters(hparams)
         self.model, self.cnn_model = self.load_model()
     
     def forward(self, x):
@@ -38,9 +49,11 @@ class MOTNeuralSolver(pl.LightningModule):
 
     def load_model(self):
         cnn_arch = self.hparams['graph_model_params']['cnn_params']['arch']
-        model =  MOTMPNet(self.hparams['graph_model_params']).cuda()
 
-        cnn_model = resnet50_fc256(10, loss='xent', pretrained=True).cuda()
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model =  MOTMPNet(self.hparams['graph_model_params']).to(device)
+        
+        cnn_model = resnet50_fc256(10, loss='xent', pretrained=True).to(device)
         load_pretrained_weights(cnn_model,
                                 osp.join(OUTPUT_PATH, self.hparams['graph_model_params']['cnn_params']['model_weights_path'][cnn_arch]))
         cnn_model.return_embeddings = True
@@ -116,14 +129,16 @@ class MOTNeuralSolver(pl.LightningModule):
 
         outputs = self.model(batch)
         loss = self._compute_loss(outputs, batch)
-        logs = {**compute_perform_metrics(outputs, batch), **{'loss': loss}}
-        log = {key + f'/{train_val}': val for key, val in logs.items()}
 
-        if train_val == 'train':
-            return {'loss': loss, 'log': log}
+        metrics = compute_perform_metrics(outputs, batch)
+        metrics["loss"] = loss
+        metrics = {f"{key}/{train_val}": val for key, val in metrics.items()}
 
-        else:
-            return log
+        on_step = (train_val == "train")
+        for key, value in metrics.items():
+            self.log(key, value, on_step=on_step, on_epoch=True, prog_bar=False, logger=True, sync_dist=False)
+
+        return {"loss": loss} if train_val == "train" else None
 
     def training_step(self, batch, batch_idx):
         return self._train_val_step(batch, batch_idx, 'train')
@@ -131,10 +146,21 @@ class MOTNeuralSolver(pl.LightningModule):
     def validation_step(self, batch, batch_idx):
         return self._train_val_step(batch, batch_idx, 'val')
 
-    def validation_epoch_end(self, outputs):
-        metrics = pd.DataFrame(outputs).mean(axis=0).to_dict()
-        metrics = {metric_name: torch.as_tensor(metric) for metric_name, metric in metrics.items()}
-        return {'val_loss': metrics['loss/val'], 'log': metrics}
+    def on_validation_epoch_end(self):
+        if not self._val_step_outputs:
+            return
+
+        metrics = pd.DataFrame(self._val_step_outputs).mean(axis=0).to_dict()
+
+        for key, value in metrics.items():
+            val_tensor = torch.as_tensor(value)
+            self.log('val_loss' if key == 'loss/val' else key,
+                     val_tensor,
+                     prog_bar=(key == 'loss/val'),
+                     logger=True,
+                     sync_dist=False)
+
+        self._val_step_outputs.clear()  
 
     def track_all_seqs(self, output_files_dir, dataset, use_gt = False, verbose = False):
         tracker = MPNTracker(dataset=dataset,

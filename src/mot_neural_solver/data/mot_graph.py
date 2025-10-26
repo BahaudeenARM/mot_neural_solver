@@ -60,7 +60,9 @@ class Graph(Data):
 
     def cuda(self):
         #self.tensor()
-        self._change_attrs_types(attr_change_fn=lambda x: x.cuda())
+        device = self.edge_index.device
+        self._change_attrs_types(attr_change_fn=lambda x: x.to(device))
+
         return self
 
     def to(self, device):

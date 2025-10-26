@@ -483,12 +483,15 @@ def load_checkpoint(fpath):
     if fpath is None:
         raise ValueError('File path is None')
     if not osp.exists(fpath):
-        raise FileNotFoundError('File is not found at "{}"'.format(fpath))
+        raise FileNotFoundError(f'File is not found at "{fpath}"')
+
     map_location = None if torch.cuda.is_available() else 'cpu'
 
-    checkpoint = torch.load(fpath, map_location=map_location)
-
-    return checkpoint
+    try:
+        return torch.load(fpath, map_location=map_location, weights_only=True)
+    except:
+        print(f"[WARNING] Could not load file in safe mode")
+        return torch.load(fpath, map_location=map_location, weights_only=False)
 
 def load_pretrained_weights(model, weight_path):
     r"""Loads pretrianed weights to model.

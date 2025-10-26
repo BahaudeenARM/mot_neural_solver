@@ -1,3 +1,4 @@
+import torch
 import sacred
 from sacred import Experiment
 
@@ -66,16 +67,21 @@ def main(_config, _run):
     ckpt_callback = ModelCheckpoint(save_epoch_start = _config['train_params']['save_epoch_start'],
                                     save_every_epoch = _config['train_params']['save_every_epoch'])
 
-    trainer = Trainer(gpus=1,
-                      callbacks=[MOTMetricsLogger(compute_oracle_results = _config['eval_params']['normalize_mot_metrics']), ckpt_callback],
-                      weights_summary = None,
-                      checkpoint_callback=False,
-                      max_epochs=_config['train_params']['num_epochs'],
-                      val_percent_check = _config['eval_params']['val_percent_check'],
-                      check_val_every_n_epoch=_config['eval_params']['check_val_every_n_epoch'],
-                      nb_sanity_val_steps=0,
-                      logger =logger,
-                      default_save_path=osp.join(OUTPUT_PATH, 'experiments', run_str))
+    trainer = Trainer(
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
+        devices=1 if torch.cuda.is_available() else None,
+        callbacks=[
+            MOTMetricsLogger(compute_oracle_results=_config['eval_params']['normalize_mot_metrics']),
+            ckpt_callback,
+        ],
+        enable_checkpointing=False,
+        max_epochs=_config['train_params']['num_epochs'],
+        limit_val_batches=_config['eval_params']['val_percent_check'],
+        check_val_every_n_epoch=_config['eval_params']['check_val_every_n_epoch'],
+        num_sanity_val_steps=0,
+        logger=logger,
+        default_root_dir=osp.join(OUTPUT_PATH, 'experiments', run_str),
+    )
     trainer.fit(model)
 
 

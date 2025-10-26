@@ -91,7 +91,9 @@ def load_embeddings_from_imgs(det_df, dataset_params, seq_info_dict, cnn_model, 
     reid_embeds = []
     with torch.no_grad():
         for bboxes in bb_loader:
-            node_out, reid_out = cnn_model(bboxes.cuda())
+            device = next(cnn_model.parameters()).device
+            node_out, reid_out = cnn_model(bboxes.to(device))
+
             node_embeds.append(node_out.to(device))
             reid_embeds.append(reid_out.to(device))
 

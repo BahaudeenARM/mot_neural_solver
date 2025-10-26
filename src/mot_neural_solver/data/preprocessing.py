@@ -20,7 +20,9 @@ class FRCNNPreprocessor:
     def step(self, blob):
         if blob['dets'].shape[1] != 0:
             self.obj_detect.load_image(blob['img'])
-            boxes, scores = self.obj_detect.predict_boxes(blob['dets'].squeeze(dim=0).cuda())
+
+            device = blob['dets'].device
+            boxes, scores = self.obj_detect.predict_boxes(blob['dets'].squeeze(dim=0).to(device))
 
             # Filter out detections with low score
             keep = scores >= self.detect_score_thresh

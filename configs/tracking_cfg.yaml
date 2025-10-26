@@ -47,7 +47,7 @@ dataset_params:
 
   # RGB params
   img_size: [128, 64] # Size at which bounding box images are resized
-  img_batch_size: 5000 # Batch size for evaluating
+  img_batch_size: 3000 # Batch size for evaluating
 
   # Graph Construction Parameters
   gt_training_min_vis: 0.2 # Minimum visibility score allowed in a GT box to be used for training

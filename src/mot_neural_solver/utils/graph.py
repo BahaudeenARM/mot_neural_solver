@@ -184,9 +184,11 @@ def to_undirected_graph(mot_graph, attrs_to_update = ('edge_preds', 'edge_labels
         mot_graph: MOTGraph object
         attrs_to_update: list/tuple of edge attribute names, that will be averaged over each pair of directed edges
     """
+    device = mot_graph.graph_obj.edge_index.device
+    mot_graph.graph_obj.to(device)
 
     # Make edges undirected
-    sorted_edges, _ = torch.sort(mot_graph.graph_obj.edge_index, dim=0)
+    sorted_edges, _ = torch.sort(mot_graph.graph_obj.edge_index.long(), dim=0)
     undirected_edges, orig_indices = torch.unique(sorted_edges, return_inverse=True, dim=1)
     assert sorted_edges.shape[1] == 2 * undirected_edges.shape[1], "Some edges were not duplicated"
     mot_graph.graph_obj.edge_index = undirected_edges

@@ -95,7 +95,10 @@ class ExactProjector:
             graph_to_project = Graph()
             graph_to_project.edge_preds = self.final_graph.edge_preds[edges_mask]
             graph_to_project.edge_index = self.final_graph.edge_index.T[edges_mask].T
-            graph_to_project.node_names = self.final_graph.node_names.cuda()[nodes_mask]
+            
+            device = self.final_graph.node_names.device
+            graph_to_project.node_names = self.final_graph.node_names.to(device)[nodes_mask]
+
             graph_to_project.node_preds = torch.zeros_like(graph_to_project.node_names)
 
             if self.solver_backend == 'gurobi':

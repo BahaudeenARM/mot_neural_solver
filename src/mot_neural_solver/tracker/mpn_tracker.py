@@ -90,11 +90,19 @@ class MPNTracker:
             tuple containing a torch.Tensor with the predicted value for every edge in the subgraph, and a binary mask
             indicating which edges inside the subgraph where pruned with KNN
         """
+        device = next(self.graph_model.parameters()).device
+
+        updated_subgraph = subgraph.to(device) if hasattr(subgraph, "to") else None
+        if updated_subgraph is not None:
+            subgraph = updated_subgraph
+
         # Prune graph edges
         knn_mask = get_knn_mask(pwise_dist=subgraph.reid_emb_dists, edge_ixs=subgraph.edge_index,
                                 num_nodes=subgraph.num_nodes, top_k_nns=self.dataset_params['top_k_nns'],
                                 use_cuda=True, reciprocal_k_nns=self.dataset_params['reciprocal_k_nns'],
                                 symmetric_edges=True)
+        knn_mask = knn_mask.to(device).bool()
+
         subgraph.edge_index = subgraph.edge_index.T[knn_mask].T
         subgraph.edge_attr = subgraph.edge_attr[knn_mask]
         if hasattr(subgraph, 'edge_labels'):
@@ -102,18 +110,16 @@ class MPNTracker:
 
         # Predict active edges
         if self.use_gt:  # For debugging purposes and obtaining oracle results
-            pruned_edge_preds = subgraph.edge_labels
-
+            pruned_edge_preds = subgraph.edge_labels.float()
         else:
             with torch.no_grad():
-                pruned_edge_preds = torch.sigmoid(self.graph_model(subgraph)['classified_edges'][-1].view(-1))
+                pruned_edge_preds = torch.sigmoid(self.graph_model(subgraph)['classified_edges'][-1].reshape(-1))
 
-        edge_preds = torch.zeros(knn_mask.shape[0]).to(pruned_edge_preds.device)
+        edge_preds = torch.zeros(knn_mask.shape[0], device=device, dtype=pruned_edge_preds.dtype)
         edge_preds[knn_mask] = pruned_edge_preds
 
         if self.eval_params['set_pruned_edges_to_inactive']:
-            return edge_preds, torch.ones_like(knn_mask)
-
+            return edge_preds, torch.ones_like(knn_mask, dtype=torch.bool)
         else:
             return edge_preds, knn_mask  # In this case, pruning an edge counts as not predicting a value for it at all
             # However, if it is pruned for every batch, then it counts as inactive.
@@ -128,32 +134,34 @@ class MPNTracker:
         Since windows overlap, we end up with several predictions per edge. We simply average them overall all
         windows.
         """
-        device = torch.device('cuda')
-        all_frames = np.array(subseq_graph.frames)
-        frame_num_per_node = torch.from_numpy(subseq_graph.graph_df.frame.values).to(device)
-        node_names = torch.arange(subseq_graph.graph_obj.x.shape[0])
+        device = next(self.graph_model.parameters()).device
 
+        all_frames = np.array(subseq_graph.frames)
+        frame_num_per_node = torch.as_tensor(subseq_graph.graph_df.frame.values, device=device)
+
+        edge_index = subseq_graph.graph_obj.edge_index.to(device).long()
+        node_names = torch.arange(subseq_graph.graph_obj.x.to(device).size(0), device=device, dtype=torch.long)
         # Iterate over overlapping windows of (starg_frame, end_frame)
-        overall_edge_preds = torch.zeros(subseq_graph.graph_obj.num_edges).to(device)
-        overall_num_preds = overall_edge_preds.clone()
+        overall_edge_preds = torch.zeros(subseq_graph.graph_obj.num_edges, device=device, dtype=torch.float32)
+        overall_num_preds = torch.zeros_like(overall_edge_preds)
+
         for eval_round, (start_frame, end_frame) in enumerate(zip(all_frames, all_frames[frames_per_graph - 1:])):
             assert ((start_frame <= all_frames) & (all_frames <= end_frame)).sum() == frames_per_graph
 
             # Create and evaluate a a subgraph corresponding to a batch of frames
-            nodes_mask = (start_frame <= frame_num_per_node) & (frame_num_per_node <= end_frame)
-            edges_mask = nodes_mask[subseq_graph.graph_obj.edge_index[0]] & nodes_mask[
-                subseq_graph.graph_obj.edge_index[1]]
+            nodes_mask = ((start_frame <= frame_num_per_node) & (frame_num_per_node <= end_frame)).to(device).bool()
+            edges_mask = (nodes_mask[edge_index[0]] & nodes_mask[edge_index[1]]).bool()
 
             subgraph = Graph(x=subseq_graph.graph_obj.x[nodes_mask],
                              edge_attr=subseq_graph.graph_obj.edge_attr[edges_mask],
                              reid_emb_dists=subseq_graph.graph_obj.reid_emb_dists[edges_mask],
                              edge_index=subseq_graph.graph_obj.edge_index.T[edges_mask].T - node_names[nodes_mask][0])
-
             if hasattr(subseq_graph.graph_obj, 'edge_labels'):
-                subgraph.edge_labels = subseq_graph.graph_obj.edge_labels[edges_mask]
-
+                subgraph.edge_labels = subseq_graph.graph_obj.edge_labels.to(device)[edges_mask]
             # Predict edge values for the current batch
             edge_preds, pred_mask = self._predict_edges(subgraph=subgraph)
+            edge_preds = edge_preds.to(device)
+            pred_mask  = pred_mask.to(device).bool()
 
             # Store predictions
             overall_edge_preds[edges_mask] += edge_preds
@@ -162,8 +170,9 @@ class MPNTracker:
             overall_num_preds[torch.where(edges_mask)[0][pred_mask]] += 1
 
         # Average edge predictions over all batches, and over each pair of directed edges
-        final_edge_preds = overall_edge_preds / overall_num_preds
-        final_edge_preds[torch.isnan(final_edge_preds)] = 0
+        final_edge_preds = overall_edge_preds / overall_num_preds.clamp_min(1.0)
+        final_edge_preds[torch.isnan(final_edge_preds)] = 0.0
+
         subseq_graph.graph_obj.edge_preds = final_edge_preds
         to_undirected_graph(subseq_graph, attrs_to_update=('edge_preds', 'edge_labels'))
         to_lightweight_graph(subseq_graph)

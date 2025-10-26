@@ -3,6 +3,7 @@ from sacred import Experiment
 
 from mot_neural_solver.utils.misc import make_deterministic, get_run_str_and_save_dir
 
+import torch, pytorch_lightning as pl, tempfile, os
 from mot_neural_solver.path_cfg import OUTPUT_PATH, DATA_PATH
 import os.path as osp
 
@@ -12,6 +13,9 @@ from mot_neural_solver.utils.evaluation import compute_mot_metrics
 import pandas as pd
 
 from sacred import SETTINGS
+
+import traceback
+
 SETTINGS.CONFIG.READ_ONLY_CONFIG=False
 
 ex = Experiment()
@@ -19,6 +23,28 @@ ex.add_config('configs/tracking_cfg.yaml')
 ex.add_config({'run_id': 'evaluation',
                'add_date': True,
                'precomputed_embeddings': True})
+
+def patch_checkpoint_file(ckpt_file_path: str) -> str:
+    """
+    Adds missing metadata to .ckpt file to ensure compatibility with newer pytorch versions
+    """
+    checkpoint = torch.load(ckpt_file_path, map_location="cpu")
+
+    if isinstance(checkpoint, dict) and "pytorch-lightning_version" in checkpoint and "state_dict" in checkpoint:
+        return ckpt_file_path
+
+    if not isinstance(checkpoint, dict) or "state_dict" not in checkpoint:
+        checkpoint = {"state_dict": checkpoint}
+
+    # add missing metadata
+    checkpoint.setdefault("pytorch-lightning_version", pl.__version__)
+    checkpoint.setdefault("hyper_parameters", {})
+
+    fd, updated_checkpoint_path = tempfile.mkstemp(suffix=".ckpt")
+    os.close(fd)
+    torch.save(checkpoint, updated_checkpoint_path)
+    return updated_checkpoint_path
+
 
 @ex.automain
 def main(_config, _run):
@@ -29,8 +55,11 @@ def main(_config, _run):
     run_str, save_dir = get_run_str_and_save_dir(_config['run_id'], None, _config['add_date'])
     out_files_dir = osp.join(save_dir, 'mot_files')
 
-    # Load model from checkpoint and update config entries that may vary from the ones used in training
-    model = MOTNeuralSolver.load_from_checkpoint(checkpoint_path=_config['ckpt_path'] if osp.exists(_config['ckpt_path'])  else osp.join(OUTPUT_PATH, _config['ckpt_path']))
+    ckpt_path = _config['ckpt_path'] if osp.exists(_config['ckpt_path']) else osp.join(OUTPUT_PATH, _config['ckpt_path'])
+    ckpt_path = patch_checkpoint_file(ckpt_path)
+
+    model = MOTNeuralSolver.load_from_checkpoint(checkpoint_path=ckpt_path, hparams=_config)
+
     model.hparams.update({'eval_params':_config['eval_params'],
                           'data_splits':_config['data_splits']})
     model.hparams['dataset_params']['precomputed_embeddings'] = _config['precomputed_embeddings']
@@ -55,5 +84,7 @@ def main(_config, _run):
             cols = [col for col in mot_metrics_summary.columns if col in _config['eval_params']['mot_metrics_to_log']]
             print("\n" + str(mot_metrics_summary[cols]))
 
-    except:
+    except Exception as e:
         print("Could not evaluate the given results")
+        print(e)
+        traceback.print_exc()
