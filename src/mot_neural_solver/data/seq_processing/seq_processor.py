@@ -63,6 +63,8 @@ _ENSURE_BOX_IN_FRAME = {'MOT': False,
 # We now map each sequence name to a sequence type in _SEQ_TYPES
 _SEQ_TYPES = {}
 
+_SEQ_TYPES['det'] = 'MOT'
+
 # MOT20 Sequences
 mot20_seqs = [f'MOT20-{seq_num:02}{det}' for seq_num in (1, 2, 3, 5) for det in ('', '-GT')]
 mot20_seqs += [f'MOT20-{seq_num:02}' for seq_num in (4, 6, 7, 8)]
@@ -142,6 +144,7 @@ class MOTSeqProcessor:
     def __init__(self, dataset_path, seq_name, dataset_params, cnn_model = None, logger = None):
         self.seq_name = seq_name
         self.dataset_path = dataset_path
+        # print(_SEQ_TYPES)
         self.seq_type = _SEQ_TYPES[seq_name]
 
         self.det_df_loader = _SEQ_TYPE_DETS_DF_LOADER[self.seq_type]

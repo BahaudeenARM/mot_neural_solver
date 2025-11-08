@@ -5,7 +5,7 @@ frcnn_weights: trained_models/frcnn/frcnn_epoch_27.pt.tar
 
 # List of datasets names that will be processed (see tracktor/data/factory.py)
 # dataset_names: [mot15_train, mot15_test, mot17_train_17, mot17_test_17]
-dataset_names: [mot15_train]
+dataset_names: [vta_offline_mot_test]
 
 # Params for preprocessing using FRCNN
 frcnn_prepr_params:

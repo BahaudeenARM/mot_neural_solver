@@ -78,5 +78,12 @@ _SPLITS['all_train'] = {**_SPLITS['mot17_train_gt'], **_SPLITS['mot15_train_gt']
 _SPLITS['all_test'] = {**_SPLITS['mot17_test'], **_SPLITS['mot15_test'], **_SPLITS['mot20_test']}
 
 
+############
+# VTA_Offline_MOT_Eval
+############
+
+# Test Sequences
+_SPLITS['vta_offline_mot_test'] = {'VTA_Offline_MOT_Eval/test': ['det']}
+
 
 
