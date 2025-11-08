@@ -79,7 +79,7 @@ dataset_params:
 data_splits: # See src/mot_neural_solver/data/splits.py
   train: ['mot15_train_gt', 'mot17_split_1_train_gt']
   val: 'split_1_val'
-  test: ['mot15_test', 'mot17_test']
+  test: ['mot15_train', 'mot17_train']
 
 eval_params:
   # Logging / Metrics reporting params
