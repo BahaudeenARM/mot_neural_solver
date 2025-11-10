@@ -92,6 +92,8 @@ def _build_scene_info_dict_mot17(seq_name, data_root_path, dataset_params):
     cp = configparser.ConfigParser()
     cp.read(info_file_path)
 
+    MOV_CAMERA_DICT['det'] = False
+
     seq_info_dict = {'seq': seq_name,
                      'seq_path': osp.join(data_root_path, seq_name),
                      'det_file_name': dataset_params['det_file_name'],
@@ -131,7 +133,6 @@ def get_mot_det_df(seq_name, data_root_path, dataset_params):
         det_df['frame_path'] = det_df['frame'].apply(lambda frame_num: osp.join(seq_path, f'img1/{frame_num:06}.jpg'))
 
     assert osp.exists(det_df['frame_path'].iloc[0])
-
     seq_info_dict = _build_scene_info_dict_mot17(seq_name, data_root_path, dataset_params)
     seq_info_dict['is_gt'] = False
     if seq_info_dict['has_gt']: # Return the corresponding ground truth, if available, for the ground truth assignment

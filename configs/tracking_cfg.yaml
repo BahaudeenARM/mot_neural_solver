@@ -21,9 +21,9 @@ train_params:
 
 dataset_params:
   # Dataset Processing params:
-  precomputed_embeddings: True # Determines whether CNN embeddings for nodes and reid are computed once, stored, and
+  precomputed_embeddings: False # Determines whether CNN embeddings for nodes and reid are computed once, stored, and
                                # then loaded when needed (True) or compute every time they are neede
-  overwrite_processed_data: False # If True, sequence detects are processed again, and previous data is overwritten
+  overwrite_processed_data: True # If True, sequence detects are processed again, and previous data is overwritten
                                   # (GT assignment, precomp embeddings (if they exist), processed dets file
   det_file_name: tracktor_prepr_det # Name of the detections file used for val/test (matches the one created in preprocessing (see preprocessing.yaml)
                                     # e.g. change it for frcnn_prepr_det if not using tracktor for preprocessing
@@ -79,7 +79,7 @@ dataset_params:
 data_splits: # See src/mot_neural_solver/data/splits.py
   train: ['mot15_train_gt', 'mot17_split_1_train_gt']
   val: 'split_1_val'
-  test: ['vta_offline_mot_test']
+  test: ['mot17_test']
 
 eval_params:
   # Logging / Metrics reporting params

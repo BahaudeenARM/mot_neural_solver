@@ -33,7 +33,7 @@ def main(dataset_names,  prepr_w_tracktor, frcnn_prepr_params,  tracktor_params,
         prepr_params = frcnn_prepr_params
 
     make_deterministic(prepr_params['seed'])
-    MOV_CAMERA_DICT = {**MOT15_MOV_CAMERA_DICT, **MOT17_MOV_CAMERA_DICT}
+    MOV_CAMERA_DICT = {**MOT15_MOV_CAMERA_DICT, **MOT17_MOV_CAMERA_DICT, 'det':False}
 
     # object detection
     _log.info("Initializing object detector.")
