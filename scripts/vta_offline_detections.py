@@ -52,19 +52,17 @@ def patch_checkpoint_file(ckpt_file_path: str) -> str:
     torch.save(checkpoint, updated_checkpoint_path)
     return updated_checkpoint_path
 
-def process_detections(config_file_path, output_folder_path):
-    with open(config_file_path) as yaml_file:
-        _config = yaml.safe_load(yaml_file)
-    ckpt_path = _config['ckpt_path'] if osp.exists(_config['ckpt_path']) else osp.join(OUTPUT_PATH, _config['ckpt_path'])
+def process_detections(config, output_folder_path):
+    ckpt_path = config['ckpt_path'] if osp.exists(config['ckpt_path']) else osp.join(OUTPUT_PATH, config['ckpt_path'])
 
     ckpt_path = patch_checkpoint_file(ckpt_path)
 
-    model = MOTNeuralSolver.load_from_checkpoint(checkpoint_path=ckpt_path, hparams=_config)
+    model = MOTNeuralSolver.load_from_checkpoint(checkpoint_path=ckpt_path, hparams=config)
 
-    model.hparams.update({'eval_params':_config['eval_params'],
-                          'data_splits':_config['data_splits']})
-    model.hparams['dataset_params']['precomputed_embeddings'] = _config['dataset_params']['precomputed_embeddings']
-    model.hparams['dataset_params']['img_batch_size'] = _config['dataset_params']['img_batch_size']
+    model.hparams.update({'eval_params':config['eval_params'],
+                          'data_splits':config['data_splits']})
+    model.hparams['dataset_params']['precomputed_embeddings'] = config['dataset_params']['precomputed_embeddings']
+    model.hparams['dataset_params']['img_batch_size'] = config['dataset_params']['img_batch_size']
 
     # Get output MOT results files
     test_dataset = model.test_dataset()
@@ -75,35 +73,31 @@ def process_detections(config_file_path, output_folder_path):
 
     print("Finished processing")
 
-def preprocess_detection(config_file_path):
-
-    with open(config_file_path) as yaml_file:
-        _config = yaml.safe_load(yaml_file)
-
-    if _config['prepr_w_tracktor']:
-        prepr_params = _config['tracktor_params']
+def preprocess_detection(config):
+    if config['prepr_w_tracktor']:
+        prepr_params = config['tracktor_params']
 
     else:
-        prepr_params = _config['frcnn_prepr_params']
+        prepr_params = config['frcnn_prepr_params']
 
     MOV_CAMERA_DICT = {**MOT15_MOV_CAMERA_DICT, **MOT17_MOV_CAMERA_DICT, 'det':False}
 
     # object detection
     print("Initializing object detector.")
     obj_detect = FRCNN_FPN(num_classes=2)
-    obj_detect.load_state_dict(torch.load(osp.join(OUTPUT_PATH, _config['frcnn_weights']),
+    obj_detect.load_state_dict(torch.load(osp.join(OUTPUT_PATH, config['frcnn_weights']),
                                           map_location=lambda storage, loc: storage))
     obj_detect.eval()
     obj_detect.cuda()
 
-    if _config['prepr_w_tracktor']:
+    if config['prepr_w_tracktor']:
         preprocessor = Tracker(obj_detect, None, prepr_params['tracker'])
     else:
         preprocessor = FRCNNPreprocessor(obj_detect, prepr_params)
 
-    print(f"Starting  preprocessing of datasets {_config['dataset_names']} with {'Tracktor' if _config['prepr_w_tracktor'] else 'FRCNN'} \n")
+    print(f"Starting  preprocessing of datasets {config['dataset_names']} with {'Tracktor' if config['prepr_w_tracktor'] else 'FRCNN'} \n")
 
-    for dataset_name in _config['dataset_names']:
+    for dataset_name in config['dataset_names']:
         dataset = Datasets(dataset_name)
         print(f"Preprocessing {len(dataset)} sequences from dataset {dataset_name} \n")
 
@@ -114,8 +108,8 @@ def preprocess_detection(config_file_path):
 
             start = time.time()
             print(f"Preprocessing : {seq}")
-            if _config['prepr_w_tracktor']:
-                preprocessor.do_align = _config['tracktor_params']['tracker']['do_align'] and (MOV_CAMERA_DICT[str(seq)])
+            if config['prepr_w_tracktor']:
+                preprocessor.do_align = config['tracktor_params']['tracker']['do_align'] and (MOV_CAMERA_DICT[str(seq)])
 
             data_loader = DataLoader(seq, batch_size=1, shuffle=False, num_workers=6, pin_memory=True)
             for i, frame in enumerate(tqdm(data_loader)):
@@ -127,7 +121,7 @@ def preprocess_detection(config_file_path):
             print(f"Runtime for {seq}: {time.time() - start :.1f} s.")
 
             output_file_path = osp.join(seq.seq_path, 'det', prepr_params['det_file_name'])
-            if _config['prepr_w_tracktor']:
+            if config['prepr_w_tracktor']:
                 results = preprocessor.get_results()
                 seq.write_results(results, output_file_path)
             else:
@@ -138,9 +132,9 @@ def preprocess_detection(config_file_path):
                   f"{time_total:.1f} s ({num_frames / time_total:.1f} Hz)")
 
 
-def process_detections_with_MPNTrack(config_file_path, preprocess_config_file_path, output_folder_path):
-    preprocess_detection(preprocess_config_file_path)
+def process_detections_with_MPNTrack(config, output_folder_path):
+    preprocess_detection(config.preprocessing)
     print("Succesfully preprocessed detection file\n\n")
-    process_detections(config_file_path, output_folder_path)
+    process_detections(config, output_folder_path)
 
     
